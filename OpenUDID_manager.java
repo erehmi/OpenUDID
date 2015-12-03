@@ -47,13 +47,18 @@ public class OpenUDID_manager implements ServiceConnection{
 	@Override
   	public void onServiceConnected(ComponentName className, IBinder service) {
 		//Get the OpenUDID from the remote service
+		android.os.Parcel data = null;
+		android.os.Parcel reply = null;
 		try {
 			//Send a random number to the service
-			android.os.Parcel data = android.os.Parcel.obtain(); 
-			data.writeInt(mRandom.nextInt());
-			android.os.Parcel reply = android.os.Parcel.obtain(); 
-			service.transact(1, android.os.Parcel.obtain(), reply, 0);
-			if (data.readInt() == reply.readInt()) //Check if the service returns us this number
+			int randomToken = mRandom.nextInt();
+			data = android.os.Parcel.obtain();
+			data.writeInt(randomToken);
+
+			reply = android.os.Parcel.obtain();
+			service.transact(1, data, reply, 0);
+
+			if (randomToken == reply.readInt()) //Check if the service returns us this number
 			{
 				final String _openUDID = reply.readString();
 				if (_openUDID != null) { //if valid OpenUDID, save it
@@ -61,14 +66,22 @@ public class OpenUDID_manager implements ServiceConnection{
 
 					if (mReceivedOpenUDIDs.containsKey(_openUDID)) mReceivedOpenUDIDs.put(_openUDID, mReceivedOpenUDIDs.get(_openUDID) + 1);
 					else mReceivedOpenUDIDs.put(_openUDID, 1);
-						
 				}
 			}
-		} catch (RemoteException e) {if (LOG) Log.e(TAG, "RemoteException: " + e.getMessage());}		    	    			
-		mContext.unbindService(this);
-		
-		startService(); //Try the next one
-  	}
+		} catch (RemoteException e) {
+			if (LOG) Log.e(TAG, "RemoteException: " + e.getMessage());
+		} finally {
+			if (data != null) {
+				data.recycle();
+			}
+			if (reply != null) {
+				reply.recycle();
+			}
+
+			mContext.unbindService(this);
+			startService(); //Try the next one
+		}
+	}
 	
 	@Override
 	public void onServiceDisconnected(ComponentName className) {}
@@ -106,7 +119,10 @@ public class OpenUDID_manager implements ServiceConnection{
             i.setComponent(new ComponentName(servInfo.applicationInfo.packageName, servInfo.name));
             mMatchingIntents.remove(0);
             try	{	// try added by Lionscribe
-            	mContext.bindService(i, this,  Context.BIND_AUTO_CREATE);
+				// FIX ISSUE: if bindService(...) return false
+            	if (!mContext.bindService(i, this,  Context.BIND_AUTO_CREATE)) {
+                    startService();	// if bindService(...) return false, start next one
+                }
             }
             catch (SecurityException e) {
                 startService();	// ignore this one, and start next one
